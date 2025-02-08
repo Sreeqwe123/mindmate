@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, session
+from flask import Flask, request, jsonify
 import torch
 import random
 import json
@@ -6,7 +6,7 @@ from model import NeuralNet
 from nltk_utils import bag_of_words, tokenize
 
 app = Flask(__name__)
-app.secret_key = "your_secret_key"  # Needed for session handling
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 with open("intents.json", "r") as json_data:
@@ -27,23 +27,21 @@ model.load_state_dict(model_state)
 model.eval()
 
 bot_name = "Sam"
-
-# Store chat context
-chat_sessions = {}
+chat_sessions = {}  # Dictionary to store user chat history
 
 @app.route("/chat", methods=["POST"])
 def chat():
-    user_id = request.json.get("user_id")  # Unique user ID
+    user_id = request.json.get("user_id")  # Unique user identifier
     user_message = request.json.get("message")
 
     if not user_message:
         return jsonify({"error": "No message provided"}), 400
 
-    # Retrieve session history
+    # Initialize chat session if not exists
     if user_id not in chat_sessions:
         chat_sessions[user_id] = []
 
-    chat_sessions[user_id].append(user_message)
+    chat_sessions[user_id].append(f"You: {user_message}")  # Store user input
 
     sentence = tokenize(user_message)
     X = bag_of_words(sentence, all_words)
@@ -61,12 +59,12 @@ def chat():
         for intent in intents["intents"]:
             if tag == intent["tag"]:
                 response = random.choice(intent["responses"])
-                chat_sessions[user_id].append(response)  # Store bot response
-                return jsonify({"bot": response, "context": chat_sessions[user_id]})
+                chat_sessions[user_id].append(f"{bot_name}: {response}")  # Store bot response
+                return jsonify({"bot": response, "context": chat_sessions[user_id][-5:]})  # Return last 5 messages
     else:
         response = "I do not understand..."
-        chat_sessions[user_id].append(response)
-        return jsonify({"bot": response, "context": chat_sessions[user_id]})
+        chat_sessions[user_id].append(f"{bot_name}: {response}")
+        return jsonify({"bot": response, "context": chat_sessions[user_id][-5:]})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
