@@ -24,7 +24,7 @@ model.load_state_dict(model_state)
 model.eval()
 
 bot_name = "Sam"
-chat_history = []
+chat_history = []  # List to store conversation history
 
 print("Let's chat! (type 'quit' to exit)")
 
@@ -59,8 +59,8 @@ while True:
         chat_history.append(f"{bot_name}: {bot_response}")
         print(f"{bot_name}: {bot_response}")
 
-    # Print chat history for debugging
+    # Print the last 5 messages to simulate a contextual conversation
     print("\nChat History:")
-    for message in chat_history[-5:]:  # Show last 5 messages
+    for message in chat_history[-5:]:  # Display only last 5 messages
         print(message)
     print("-" * 30)
