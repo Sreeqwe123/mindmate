@@ -18,7 +18,7 @@ with open("intents.json", "r") as json_data:
 
 # Load trained model
 FILE = "data.pth"
-data = torch.load(FILE)
+data = torch.load(FILE, map_location=device)  # Ensures compatibility across devices
 input_size = data["input_size"]
 hidden_size = data["hidden_size"]
 output_size = data["output_size"]
@@ -34,26 +34,34 @@ bot_name = "MindMate"
 chat_sessions = {}  # Store chat history
 
 # Configure Google Gemini API
-genai.configure(api_key=os.environ["AIzaSyCZUjrMRQf8rRsqizwn1a7UiAZslE0r-9U"])
+api_key = os.getenv("GEMINI_API_KEY")  # Use os.getenv() to avoid KeyError
+if not api_key:
+    raise ValueError("Missing Gemini API Key! Set 'GEMINI_API_KEY' as an environment variable.")
+
+genai.configure(api_key=api_key)
 
 generation_config = {
-    "temperature": 1.95,
-    "top_p": 0.95,
+    "temperature": 1.2,  # Adjusted for better mental health responses
+    "top_p": 0.9,
     "top_k": 40,
-    "max_output_tokens": 8192,
+    "max_output_tokens": 512,  # Reduced to prevent long responses
     "response_mime_type": "application/json",
 }
 
 gemini_model = genai.GenerativeModel(
     model_name="gemini-2.0-flash",
     generation_config=generation_config,
-    system_instruction="It is a mental health support chatbot named MindMate. Do not respond to non-mental health-related questions."
+    system_instruction="You are MindMate, a chatbot that provides mental health support. Keep responses concise and empathetic."
 )
+
+# Create a single chat session for Gemini AI to maintain context across interactions
+chat_session = gemini_model.start_chat(history=[])
 
 @app.route("/chat", methods=["POST"])
 def chat():
-    user_id = request.json.get("user_id")  # Unique user identifier
-    user_message = request.json.get("message")
+    data = request.get_json()
+    user_id = data.get("user_id")
+    user_message = data.get("message")
 
     if not user_message:
         return jsonify({"error": "No message provided"}), 400
@@ -64,6 +72,7 @@ def chat():
 
     chat_sessions[user_id].append(f"You: {user_message}")  # Store user input
 
+    # Process message with the trained chatbot model
     sentence = tokenize(user_message)
     X = bag_of_words(sentence, all_words)
     X = X.reshape(1, X.shape[0])
@@ -71,7 +80,6 @@ def chat():
 
     output = model(X)
     _, predicted = torch.max(output, dim=1)
-
     tag = tags[predicted.item()]
     probs = torch.softmax(output, dim=1)
     prob = probs[0][predicted.item()]
@@ -83,14 +91,13 @@ def chat():
                 response = random.choice(intent["responses"])
                 chat_sessions[user_id].append(f"{bot_name}: {response}")  # Store bot response
                 return jsonify({"bot": response, "context": chat_sessions[user_id][-5:]})  # Return last 5 messages
-    else:
-        # Use Gemini AI for generating a mental health-related response
-        chat_session = gemini_model.start_chat(history=[])
-        response_data = chat_session.send_message(user_message)
-        response_text = response_data.text if response_data else "I'm here to support you. How are you feeling today?"
 
-        chat_sessions[user_id].append(f"{bot_name}: {response_text}")
-        return jsonify({"bot": response_text, "context": chat_sessions[user_id][-5:]})
+    # Use Gemini AI for generating a mental health-related response
+    response_data = chat_session.send_message(user_message)
+    response_text = getattr(response_data, "text", "I'm here for you. How are you feeling today?")
+
+    chat_sessions[user_id].append(f"{bot_name}: {response_text}")
+    return jsonify({"bot": response_text, "context": chat_sessions[user_id][-5:]})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
